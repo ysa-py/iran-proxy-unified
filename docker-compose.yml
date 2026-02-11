@@ -1,0 +1,155 @@
+version: '3.8'
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Docker Compose Configuration for Iran Proxy Ultimate System
+# ═══════════════════════════════════════════════════════════════════════════
+
+services:
+  # Main application service
+  iran-proxy-ultimate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VERSION: "3.2.0"
+        BUILD_ID: "docker-compose"
+        BUILD_TIME: "${BUILD_TIME:-now}"
+    
+    container_name: iran-proxy-ultimate
+    
+    restart: unless-stopped
+    
+    environment:
+      # Core configuration
+      - IRAN_MODE=true
+      - DPI_EVASION_LEVEL=aggressive
+      - PERFORMANCE_MODE=balanced
+      
+      # Performance settings
+      - MAX_CONCURRENT=200
+      - TIMEOUT_SECONDS=15
+      - RETRY_ATTEMPTS=3
+      
+      # Feature flags
+      - ENABLE_MONITORING=true
+      - ENABLE_SELF_HEALING=true
+      - ENABLE_FALLBACK=true
+      - CACHE_ENABLED=true
+      
+      # Advanced features
+      - ENABLE_DPI_EVASION=true
+      - ENABLE_SNI_FRAGMENTATION=true
+      - ENABLE_TLS_FINGERPRINT_SPOOFING=true
+      - ENABLE_MULTI_ENDPOINT_VALIDATION=true
+      
+      # Timezone
+      - TZ=Asia/Tehran
+    
+    volumes:
+      # Mount configuration directories
+      - ./configs:/app/configs
+      - ./metrics:/app/metrics
+      - ./stats:/app/stats
+      - ./logs:/app/logs
+    
+    command:
+      - "--iran-mode"
+      - "--performance-mode"
+      - "balanced"
+      - "--dpi-evasion-level"
+      - "aggressive"
+      - "--max-concurrent"
+      - "200"
+      - "--timeout"
+      - "15"
+      - "--enable-monitoring"
+      - "--enable-self-healing"
+      - "--enable-fallback"
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "/app/iran-proxy-ultimate", "--health-check"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+    
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    
+    # Network configuration
+    networks:
+      - iran-proxy-net
+
+  # Optional: Monitoring service (Prometheus)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: iran-proxy-prometheus
+    restart: unless-stopped
+    
+    profiles:
+      - monitoring
+    
+    volumes:
+      - ./deployments/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+    
+    ports:
+      - "9090:9090"
+    
+    networks:
+      - iran-proxy-net
+  
+  # Optional: Grafana for visualization
+  grafana:
+    image: grafana/grafana:latest
+    container_name: iran-proxy-grafana
+    restart: unless-stopped
+    
+    profiles:
+      - monitoring
+    
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SERVER_ROOT_URL=http://localhost:3000
+    
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./deployments/grafana:/etc/grafana/provisioning:ro
+    
+    ports:
+      - "3000:3000"
+    
+    depends_on:
+      - prometheus
+    
+    networks:
+      - iran-proxy-net
+
+networks:
+  iran-proxy-net:
+    driver: bridge
+
+volumes:
+  prometheus-data:
+  grafana-data:
