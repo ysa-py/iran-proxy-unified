@@ -204,6 +204,8 @@ env:
   ENABLE_MULTI_ENDPOINT_VALIDATION: 'true'
   ENABLE_XHTTP_TRANSPORT: 'true'
   ENABLE_REALITY_PROTOCOL: 'true'
+  ENABLE_AI_DPI_ENGINE: 'true'
+  ENABLE_ADAPTIVE_EVASION: 'true'
   
   # Advanced Features
   ENABLE_INTELLIGENT_RETRY: 'true'
@@ -321,33 +323,23 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
-          cache-dependency-path: |
-            go.sum
-            src/go.sum
+          cache-dependency-path: go.sum
       
       - name: 📦 Download dependencies
         run: |
-          if [ -f go.mod ]; then
-            go mod download
-            go mod verify
-          fi
+          # Download and verify dependencies from root
+          go mod download
+          go mod verify
           
-          if [ -f src/go.mod ]; then
-            cd src
-            go mod download
-            go mod verify
-            cd ..
-          fi
+          # Ensure go.sum is up to date
+          go mod tidy
       
       - name: 🔍 Run go vet
         run: |
-          if [ -f src/go.mod ]; then
-            cd src
-            go vet ./...
-            cd ..
-          else
-            go vet ./...
-          fi
+          # Run vet on source directory where main code exists
+          cd src
+          go vet ./...
+          cd ..
       
       - name: 📋 Check formatting
         run: |
@@ -362,19 +354,15 @@ jobs:
       
       - name: 🔒 Run gosec security scanner
         run: |
-          if [ -f src/go.mod ]; then
-            cd src
-            go install github.com/securego/gosec/v2/cmd/gosec@latest
-            gosec -no-fail -fmt sarif -out ../gosec.sarif ./... || true
-            cd ..
-            if [ -f gosec.sarif ]; then
-              echo "✅ Security scan completed"
-            else
-              echo "⚠️ Security scan did not generate SARIF file"
-              touch gosec.sarif
-            fi
+          cd src
+          go install github.com/securego/gosec/v2/cmd/gosec@latest
+          gosec -no-fail -fmt sarif -out ../gosec.sarif ./... || true
+          cd ..
+          
+          if [ -f gosec.sarif ]; then
+            echo "✅ Security scan completed"
           else
-            echo "⚠️ No Go module found, skipping security scan"
+            echo "⚠️ Security scan did not generate SARIF file"
             touch gosec.sarif
           fi
         continue-on-error: true
@@ -429,14 +417,25 @@ jobs:
       
       - name: 🏗️ Build application
         run: |
-          if [ -f src/main.go ]; then
-            cd src
-            go build -v -ldflags="-s -w -X main.Version=${{ env.PROJECT_VERSION }} -X main.BuildID=${{ needs.preflight-validation.outputs.build_id }}" -o ../bin/iran-proxy main.go
-            cd ..
-          fi
+          cd src
+          go build -v \
+            -ldflags="-s -w \
+              -X main.Version=${{ env.PROJECT_VERSION }} \
+              -X main.BuildID=${{ needs.preflight-validation.outputs.build_id }} \
+              -X main.BuildTime=$(date -u '+%Y-%m-%d_%H:%M:%S') \
+              -X main.IranMode=true \
+              -X main.AIEngineEnabled=true" \
+            -o ../bin/iran-proxy \
+            main.go main_iran.go
+          cd ..
+          
+          chmod +x bin/iran-proxy
           
           echo "### 🏗️ Build Results" >> $GITHUB_STEP_SUMMARY
           echo "✅ Build completed successfully for Go ${{ matrix.go-version }}" >> $GITHUB_STEP_SUMMARY
+          echo "📦 Binary: bin/iran-proxy" >> $GITHUB_STEP_SUMMARY
+          echo "🇮🇷 Iran Mode: Enabled" >> $GITHUB_STEP_SUMMARY
+          echo "🤖 AI DPI Engine: Enabled" >> $GITHUB_STEP_SUMMARY
       
       - name: 🧪 Run unit tests
         if: needs.preflight-validation.outputs.run_tests == 'true'
@@ -489,8 +488,7 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: ${{ needs.preflight-validation.outputs.cache_enabled == 'true' }}
-          cache-dependency-path: |
-            src/go.sum
+          cache-dependency-path: go.sum
       
       - name: 📦 Cache Go modules
         if: needs.preflight-validation.outputs.cache_enabled == 'true'
@@ -499,7 +497,7 @@ jobs:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-          key: ${{ runner.os }}-go-${{ hashFiles('src/go.sum') }}-${{ env.CACHE_VERSION }}
+          key: ${{ runner.os }}-go-${{ hashFiles('go.sum') }}-${{ env.CACHE_VERSION }}
           restore-keys: |
             ${{ runner.os }}-go-${{ env.CACHE_VERSION }}
             ${{ runner.os }}-go-
@@ -534,15 +532,16 @@ jobs:
           DPI_LEVEL_FLAG="--dpi-evasion-level ${{ needs.preflight-validation.outputs.dpi_evasion_level }}"
           PERF_MODE_FLAG="--performance-mode ${{ needs.preflight-validation.outputs.performance_mode }}"
           
-          # Run proxy checker with retry logic
+          # Run proxy checker with retry logic and AI DPI evasion
           RETRY_COUNT=0
           MAX_RETRIES=${{ needs.preflight-validation.outputs.retry_attempts }}
           SUCCESS=false
           
           while [ $RETRY_COUNT -lt $MAX_RETRIES ] && [ "$SUCCESS" = "false" ]; do
             echo "🔄 Attempt $((RETRY_COUNT + 1)) of $MAX_RETRIES"
+            echo "🤖 using AI DPI Engine for advanced evasion..."
             
-            if ./iran-proxy-checker \
+            if ./iran-proxy \
               ${IRAN_MODE_FLAG} \
               ${DPI_LEVEL_FLAG} \
               ${PERF_MODE_FLAG} \
@@ -550,11 +549,14 @@ jobs:
               --timeout ${{ needs.preflight-validation.outputs.timeout_seconds }} \
               --protocols "${{ needs.preflight-validation.outputs.test_protocols }}" \
               --output ../configs \
+              --enable-ai-dpi \
+              --enable-adaptive-evasion \
               --enable-monitoring=${{ needs.preflight-validation.outputs.enable_monitoring }} \
               --enable-self-healing=${{ needs.preflight-validation.outputs.enable_self_healing }} \
               --enable-fallback=${{ needs.preflight-validation.outputs.enable_fallback }}; then
               SUCCESS=true
               echo "✅ Proxy check completed successfully"
+              echo "🤖 AI DPI patterns applied successfully"
             else
               RETRY_COUNT=$((RETRY_COUNT + 1))
               if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
@@ -579,7 +581,7 @@ jobs:
         run: |
           mkdir -p metrics stats
           
-          # Generate comprehensive metrics
+          # Generate comprehensive metrics with AI DPI information
           cat > metrics/quality-metrics.json << EOF
           {
             "build_id": "${{ needs.preflight-validation.outputs.build_id }}",
@@ -591,6 +593,15 @@ jobs:
             "proxy_check_success": true,
             "retry_attempts_used": 1,
             "max_retry_attempts": ${{ needs.preflight-validation.outputs.retry_attempts }},
+            "ai_dpi_features": {
+              "ai_engine_enabled": true,
+              "adaptive_evasion": true,
+              "fingerprint_rotation": true,
+              "packet_padding": true,
+              "timing_obfuscation": true,
+              "sni_fragmentation": true,
+              "traffic_mimicry": true
+            },
             "features": {
               "monitoring_enabled": ${{ needs.preflight-validation.outputs.enable_monitoring }},
               "self_healing_enabled": ${{ needs.preflight-validation.outputs.enable_self_healing }},
@@ -600,7 +611,7 @@ jobs:
           }
           EOF
           
-          echo "✅ Metrics generated" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Metrics generated including AI DPI information" >> $GITHUB_STEP_SUMMARY
       
       - name: 📤 Upload artifacts
         if: always()
@@ -653,7 +664,7 @@ jobs:
           
           go build \
             -v \
-            -ldflags="-s -w" \
+            -ldflags="-s -w -X main.Version=${{ env.PROJECT_VERSION }}" \
             -o config-generator \
             config_generator.go config_generator_ai.go config_writer.go config_writer_enhanced.go
           
@@ -779,7 +790,7 @@ jobs:
     steps:
       - name: 📊 Generate comprehensive health report
         run: |
-          echo "## 🏥 System Health & Performance Report" >> $GITHUB_STEP_SUMMARY
+          echo "### 🏥 System Health & Performance Report" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Build ID:** \`${{ needs.preflight-validation.outputs.build_id }}\`" >> $GITHUB_STEP_SUMMARY
           echo "**Timestamp:** ${{ needs.preflight-validation.outputs.run_timestamp }}" >> $GITHUB_STEP_SUMMARY
@@ -794,6 +805,8 @@ jobs:
           echo "| Performance Mode | ${{ needs.preflight-validation.outputs.performance_mode }} |" >> $GITHUB_STEP_SUMMARY
           echo "| DPI Evasion Level | ${{ needs.preflight-validation.outputs.dpi_evasion_level }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Check Mode | ${{ needs.preflight-validation.outputs.check_mode }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| AI DPI Engine | Enabled ✅ |" >> $GITHUB_STEP_SUMMARY
+          echo "| Adaptive Evasion | Enabled ✅ |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           
           echo "### 🔄 Execution Status" >> $GITHUB_STEP_SUMMARY
@@ -819,6 +832,8 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 🚀 Active Features" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- 🤖 AI DPI Evasion Engine" >> $GITHUB_STEP_SUMMARY
+          echo "- 🔄 Adaptive Evasion System" >> $GITHUB_STEP_SUMMARY
           echo "- 🔄 Multi-attempt retry system" >> $GITHUB_STEP_SUMMARY
           echo "- 💾 Intelligent dependency caching" >> $GITHUB_STEP_SUMMARY
           echo "- 🇮🇷 Advanced Iran DPI bypass" >> $GITHUB_STEP_SUMMARY

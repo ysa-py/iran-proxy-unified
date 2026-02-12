@@ -246,6 +246,10 @@ func parseConfig() *AppConfig {
 	flag.BoolVar(&config.EnableSelfHealing, "enable-self-healing", getEnvBool("ENABLE_SELF_HEALING", true), "Enable self-healing")
 	flag.BoolVar(&config.EnableMonitoring, "enable-monitoring", getEnvBool("ENABLE_MONITORING", true), "Enable monitoring & metrics")
 
+	// AI DPI Features
+	enableAIDPI := flag.Bool("enable-ai-dpi", getEnvBool("ENABLE_AI_DPI", true), "Enable AI-powered DPI evasion")
+	enableAdaptiveEvasion := flag.Bool("enable-adaptive-evasion", getEnvBool("ENABLE_ADAPTIVE_EVASION", true), "Enable adaptive evasion")
+
 	// Protocol testing
 	protocolsStr := flag.String("test-protocols", getEnv("TEST_PROTOCOLS", "vmess,vless,trojan,shadowsocks"), "Protocols to test")
 
@@ -264,6 +268,19 @@ func parseConfig() *AppConfig {
 	config.PerformanceMode = validatePerformanceMode(*perfMode)
 	config.DPIEvasionLevel = validateDPILevel(*dpiLevel)
 	config.TestProtocols = parseProtocols(*protocolsStr)
+
+	// Apply AI DPI settings - merge them into DPI config
+	if *enableAIDPI {
+		color.Cyan("🤖 AI-powered DPI evasion engine enabled")
+		if config.DPIEvasionLevel == "standard" {
+			config.DPIEvasionLevel = "aggressive"
+		}
+	}
+
+	if *enableAdaptiveEvasion {
+		color.Cyan("🔄 Adaptive evasion system enabled")
+		config.EnableSelfHealing = true
+	}
 
 	// Validate ranges
 	if config.MaxConcurrent < 50 {

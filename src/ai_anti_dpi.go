@@ -13,12 +13,6 @@ import (
 
 // AIAntiDPIEngine represents the AI-powered DPI evasion engine
 type AIAntiDPIEngine struct {
-	adaptiveLevel    string
-	fingerprints     []string
-	trafficPatterns  map[string]float64
-	lastUpdate       time.Time
-	evasionTechniques []string
-}
 
 // NewAIAntiDPIEngine creates a new AI-powered anti-DPI engine
 func NewAIAntiDPIEngine(level string) *AIAntiDPIEngine {
