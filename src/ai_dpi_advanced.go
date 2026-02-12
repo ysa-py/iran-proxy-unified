@@ -551,15 +551,14 @@ func randInt(max int) int {
 	return int(binary.BigEndian.Uint16(b)) % max
 }
 
-// randInt returns a random integer between min and max (inclusive)
-func randInt(min, max int) int {
+// randIntRange returns a random integer between min and max (inclusive)
+func randIntRange(min, max int) int {
 	if min >= max {
 		return min
 	}
 
 	return min + randInt(max-min+1)
 }
-
 
 
 
